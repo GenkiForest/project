@@ -1,2 +1,3 @@
-# project
-2019 Delayed Flights Analysis
+# Hello! Welcome to my Github! 
+# I am a data analyst leaner.
+# SQL, Python, and R are my skills.
