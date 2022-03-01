@@ -1,0 +1,231 @@
+---
+title: 'Predict credit card approval'
+author: "Yameng Guo"
+date: "10/25/2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+# Load own subset
+```{r, warning=FALSE}
+library(dplyr)
+library(psych)
+data1 <- read.csv("Group4_data3.csv", header = T)
+dim(data1)
+str(data1)
+describe(data1)
+```
+
+# Categorical features into factor data type
+```{r, warning=FALSE}
+data2 <- data1[,-c(1,19)]
+convert <- c(2:5, 7:9,16)
+data2[,convert] <- lapply(data2[,convert], as.factor)
+data2$TARGET <- as.factor(data2$TARGET)
+str(data2)
+```
+
+
+# Feature selection
+```{r,echo = FALSE,, warning=FALSE}
+library(caret)
+library(randomForest)
+set.seed(100)
+rPartMod <- train(TARGET~., data=data2, method="rpart")
+rpartImp <- varImp(rPartMod)
+print(rpartImp)
+plot(rpartImp, top = 20, main='Variable Importance')
+```
+
+# Select predictors
+```{r, warning=FALSE}
+data3 <- data2 %>% select(AMT_INCOME_TOTAL,DAYS_BIRTH,FLAG_OWN_REALTY,NAME_EDUCATION_TYPE,
+                          BEGIN_MONTHS,CNT_CHILDREN,TARGET)
+```
+
+# Create train and test datas
+```{r, warning=FALSE}
+set.seed(10152021)
+splitSample <- sample(1:2, size=nrow(data3), prob=c(0.45,0.55), replace = TRUE)
+train_45 <- data3[splitSample==1,]
+test_55 <- data3[splitSample==2,]
+
+set.seed(10152021)
+splitSample <- sample(1:2, size=nrow(data3), prob=c(0.65,0.35), replace = TRUE)
+train_65 <- data3[splitSample==1,]
+test_35 <- data3[splitSample==2,]
+
+set.seed(10152021)
+splitSample <- sample(1:2, size=nrow(data3), prob=c(0.85,0.15), replace = TRUE)
+train_85 <- data3[splitSample==1,]
+test_15 <- data3[splitSample==2,]
+```
+
+# ##############################################################################
+# ############################### KNN Model ####################################
+# Extract x and y
+```{r, warning=FALSE}
+library(caret)
+library(Matrix)
+#library(e1071)
+library(class)
+
+train_45x <- train_45 %>% select(-TARGET)
+train_45y <- train_45 %>% select(TARGET)
+test_55x <- test_55 %>% select(-TARGET)
+test_55y <- test_55 %>% select(TARGET)
+
+train_65x <- train_65 %>% select(-TARGET)
+train_65y <- train_65 %>% select(TARGET)
+test_35x <- test_35 %>% select(-TARGET)
+test_35y <- test_35 %>% select(TARGET)
+
+train_85x <- train_85 %>% select(-TARGET)
+train_85y <- train_85 %>% select(TARGET)
+test_15x <- test_15 %>% select(-TARGET)
+test_15y <- test_15 %>% select(TARGET)
+
+```
+
+# Normalization the predictors of training and testing subsamples
+```{r, warning=FALSE}
+normalize <- function(x){return((x-min(x))/(max(x)-min(x)))}
+train_45x[,c(1,2,5)] <- lapply(train_45x[,c(1,2,5)],normalize)
+test_55x[,c(1,2,5)] <- lapply(test_55x[,c(1,2,5)],normalize)
+
+train_65x[,c(1,2,5)] <- lapply(train_65x[,c(1,2,5)],normalize)
+test_35x[,c(1,2,5)] <- lapply(test_35x[,c(1,2,5)],normalize)
+
+train_85x[,c(1,2,5)] <- lapply(train_85x[,c(1,2,5)],normalize)
+test_15x[,c(1,2,5)] <- lapply(test_15x[,c(1,2,5)],normalize)
+
+```
+
+# For training subsets,convert categorical variables into numerical types
+```{r, warning=FALSE}
+train_45x$FLAG_OWN_REALTY <- ifelse(train_45x$FLAG_OWN_REALTY=="Y",1,0)
+train_65x$FLAG_OWN_REALTY <- ifelse(train_65x$FLAG_OWN_REALTY=="Y",1,0)
+train_85x$FLAG_OWN_REALTY <- ifelse(train_85x$FLAG_OWN_REALTY=="Y",1,0)
+
+education45 <-as.data.frame(dummy.code(train_45x$NAME_EDUCATION_TYPE))
+education65 <-as.data.frame(dummy.code(train_65x$NAME_EDUCATION_TYPE))
+education85 <-as.data.frame(dummy.code(train_85x$NAME_EDUCATION_TYPE))
+
+child45 <- as.data.frame(dummy.code(train_45x$CNT_CHILDREN))
+child65 <- as.data.frame(dummy.code(train_65x$CNT_CHILDREN))
+child85 <- as.data.frame(dummy.code(train_85x$CNT_CHILDREN))
+
+train_45x <- cbind(train_45x,education45,child45)
+train_45x <- train_45x %>% select(-one_of(c("NAME_EDUCATION_TYPE", "CNT_CHILDREN")))
+
+train_65x <- cbind(train_65x,education65,child65)
+train_65x <- train_65x %>% select(-one_of(c("NAME_EDUCATION_TYPE", "CNT_CHILDREN")))
+
+train_85x <- cbind(train_85x,education85,child85)
+train_85x <- train_85x %>% select(-one_of(c("NAME_EDUCATION_TYPE", "CNT_CHILDREN")))
+```
+
+# For testing subsets,convert categorical variables into numerical types
+```{r, warning=FALSE}
+test_55x$FLAG_OWN_REALTY <- ifelse(test_55x$FLAG_OWN_REALTY=="Y",1,0)
+test_35x$FLAG_OWN_REALTY <- ifelse(test_35x$FLAG_OWN_REALTY=="Y",1,0)
+test_15x$FLAG_OWN_REALTY <- ifelse(test_15x$FLAG_OWN_REALTY=="Y",1,0)
+
+education45t <-as.data.frame(dummy.code(test_55x$NAME_EDUCATION_TYPE))
+education65t <-as.data.frame(dummy.code(test_35x$NAME_EDUCATION_TYPE))
+education85t <-as.data.frame(dummy.code(test_15x$NAME_EDUCATION_TYPE))
+
+child45t <- as.data.frame(dummy.code(test_55x$CNT_CHILDREN))
+child65t <- as.data.frame(dummy.code(test_35x$CNT_CHILDREN))
+child85t <- as.data.frame(dummy.code(test_15x$CNT_CHILDREN))
+
+test_55x <- cbind(test_55x,education45t,child45t)
+test_55x <- test_55x %>% select(-one_of(c("NAME_EDUCATION_TYPE", "CNT_CHILDREN")))
+
+test_35x <- cbind(test_35x,education65t,child65t)
+test_35x <- test_35x %>% select(-one_of(c("NAME_EDUCATION_TYPE", "CNT_CHILDREN")))
+
+test_15x <- cbind(test_15x,education85t,child85t)
+test_15x <- test_15x %>% select(-one_of(c("NAME_EDUCATION_TYPE", "CNT_CHILDREN")))
+```
+
+# Remove useless data
+```{r, warning=FALSE}
+rm(list = c("data1","data2","data3","train_45","train_65","train_85","test_55",
+            "test_35","test_15","education45","education45t","education65","education65t",
+            "education85","education85t","child45","child45t","child65","child65t",
+            "child85","child85t"))
+```
+
+
+# KNN model
+```{r, warning=FALSE}
+# Optimizing
+train_45y <- ifelse(train_45y==1,"1","0")
+test_55y <- ifelse(test_55y==1,"1","0")
+i=1
+k.optm=1
+for(i in 1:10){
+  knn.model <- knn(train=train_45x,test=test_55x,cl=train_45y,k = i)
+  k.optm[i] <- 100 * sum(test_55y == knn.model)/NROW(test_55y)
+  k=i
+  cat(k,'=',k.optm[i],'
+')
+}
+
+# Accuracy plot
+plot(k.optm, type="b", xlab="K- Value",ylab="Accuracy level")
+
+model45 <- knn(train=train_45x,test=test_55x,cl=train_45y,k=7)
+confusionMatrix(model45, as.factor(test_55y))
+```
+
+# Roc plot
+```{r,warning=FALSE}
+library(pROC)
+pROC_obj <- roc(test_55y,as.numeric(model45),
+            smoothed = TRUE,
+            plot=TRUE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+            print.auc=TRUE, show.thres=TRUE)
+```
+
+
+```{r, warning=FALSE}
+train_65y <- ifelse(train_65y==1,"1","0")
+sqrt(nrow(train_65x))
+model65 <- knn(train=train_65x,test=test_35x,cl=train_65y,k=7)
+
+test_35y <- ifelse(test_35y==1,"1","0")
+confusionMatrix(model65, as.factor(test_35y))
+```
+
+# Roc plot
+```{r,warning=FALSE}
+pROC_obj1 <- roc(test_35y,as.numeric(model65),
+            smoothed = TRUE,
+            plot=TRUE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+            print.auc=TRUE, show.thres=TRUE)
+```
+
+
+```{r, warning=FALSE}
+train_85y <- ifelse(train_85y==1,"1","0")
+sqrt(nrow(train_85x))
+model85 <- knn(train=train_85x, test=test_15x,cl=train_85y,k=7)
+
+test_15y <- ifelse(test_15y==1,"1","0")
+confusionMatrix(model85, as.factor(test_15y))
+```
+
+# Roc plot
+```{r,warning=FALSE}
+pROC_obj2 <- roc(test_15y,as.numeric(model85),
+            smoothed = TRUE,
+            plot=TRUE, auc.polygon=TRUE, max.auc.polygon=TRUE,
+            print.auc=TRUE, show.thres=TRUE)
+```
