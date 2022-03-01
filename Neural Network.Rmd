@@ -1,0 +1,112 @@
+---
+title: "Neural Networks"
+author: "Yameng Guo"
+date: "10/20/2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+# Load train and test data that are created in Module 3 assignment
+```{r,warning=FALSE}
+library(readr)
+library(dplyr)
+library(psych)
+
+train <- read.csv("YamengGuo_train.csv",header = T)
+test <- read.csv("YamengGuo_test.csv",header = T)
+dim(train)
+dim(test)
+```
+
+# Descriptive train and test 
+```{r,warning=FALSE}
+summary(train)
+summary(test)
+str(train)
+```
+
+# Remove spotify_id,song_name,artist_name,song_explicit variables
+```{r,warning=FALSE}
+train1 <- train[,-which(colnames(train) %in% c("X","spotify_id", 
+                                               "song_name",
+                                             "artist_name","song_explicit"))]
+test1 <- test[,-which(colnames(test) %in% c("X","spotify_id", 
+                                              "song_name",
+                                              "artist_name","song_explicit"))]
+```
+
+# Scale data for neural network
+```{r,warning=FALSE}
+max <- apply(train1[,1:16], 2 , max)
+min <- apply(train1[,1:16], 2 , min)
+train1[,1:16] <- as.data.frame(scale(train1[,1:16], center = min, scale = max - min))
+
+max2 <- apply(test1[,1:16] , 2 , max)
+min2 <- apply(test1[,1:16], 2 , min)
+test1[,1:16] <- as.data.frame(scale(test1[,1:16], center = min2, scale = max2 - min2))
+```
+
+# Encode as a one hot vector multilabel data
+```{r,warning=FALSE}
+library(nnet)
+train2 <- cbind(train1[, 1:17], class.ind(as.factor(train1$Popularity_Level)))
+test2 <- cbind(test1[, 1:17], class.ind(as.factor(test1$Popularity_Level)))
+```
+
+# Set labels name
+```{r,warning=FALSE}
+names(train2) <- c(names(train2)[1:17],"No_Popularity","Low_Popularity","Moderately_Low_Popularity","Moderately_High_Popularity","High_Popularity")
+names(test2) <- c(names(test2)[1:17],"No_Popularity","Low_Popularity","Moderately_Low_Popularity","Moderately_High_Popularity","High_Popularity")
+
+```
+
+# Set up formula
+```{r,warning=FALSE}
+n <- names(train2)
+f <- as.formula(paste("No_Popularity+Low_Popularity+Moderately_Low_Popularity+
+                      Moderately_High_Popularity+High_Popularity ~", 
+                      paste(n[!n %in% c("Popularity_Level","No_Popularity","Low_Popularity","Moderately_Low_Popularity","Moderately_High_Popularity","High_Popularity")], collapse = " + ")))
+f
+```
+
+# Fit neural network
+```{r,warning=FALSE}
+library(neuralnet)
+library(caret)
+set.seed(10192021)
+index <- sample(1:nrow(train2),round(0.0015*nrow(train2)))
+train2 <- train2[index,]
+
+set.seed(10192021)
+nn <- neuralnet(f,
+                data = train2,
+                hidden = c(10,10),
+                rep=5,
+                err.fct="ce",
+                linear.output = FALSE,
+                lifesign = "minimal",
+                stepmax = 1000000,
+                threshold = .001)
+plot(nn)
+```
+
+# Prediction using neural network
+```{r}
+predict0 <- compute(nn, test2[,1:16])
+idx0 <- apply(predict0$net.result, 1, which.max)
+predicted0 <- c("No_Popularity","Low_Popularity","Moderately_Low_Popularity","Moderately_High_Popularity","High_Popularity")[idx0]
+test2$Popularity_Level <- recode_factor(test2$Popularity_Level,
+                                   "1"="No_Popularity",
+                                   "2"="Low_Popularity",
+                                   "3"="Moderately_Low_Popularity",
+                                   "4"="Moderately_High_Popularity",
+                                   "5"="High_Popularity")
+confusionMatrix(as.factor(predicted0),as.factor(test2$Popularity_Level))
+```
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
