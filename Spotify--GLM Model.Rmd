@@ -1,0 +1,172 @@
+---
+title: "Spotify————GLM Model"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Load data and check the structure
+
+```{r, warning=FALSE}
+library(readr)
+library(dplyr)
+library(psych)
+data <- read.csv("Spotify_Tracks_March2021.csv",header = T)
+data1 <- data
+dim(data1)
+str(data1)
+```
+
+
+# Convert "album_release_date" variable to the date type
+```{r, warning=FALSE}
+data1$album_release_date <- as.Date(data1$album_release_date,'%m/%d/%Y')
+str(data1$album_release_date)
+summary(data1)
+```
+
+
+# Handling "spotify_id" duplicate observations
+```{r, warning=FALSE}
+dupes <- duplicated(data1$spotify_id)
+table(dupes)
+a <- which(dupes=="TRUE")
+data2 <- data1[-a,]
+```
+
+
+# Check missing value
+```{r, warning=FALSE}
+na_count <- sapply(data2, function(y)
+  sum(length(which(is.na(y)))))
+na_df <- data.frame(na_count)
+print(na_df)
+data2 <- na.omit(data2)
+```
+
+
+# Create an indicator response variable "highly_popular"
+```{r, warning=FALSE}
+data2$highly_popular <- ifelse(data2$song_popularity>=80,1,0)
+data2$highly_popular <- as.factor(data2$highly_popular)
+```
+
+
+# Exploring categorical variables
+```{r, warning=FALSE}
+data2_c <- data2[,sapply(data2,class)=="character"]
+t2 <- data2_c %>% dplyr::summarise_all(dplyr::funs(dplyr::n_distinct(.)))  
+print(t2)
+```
+
+
+# Check the normality of dependent variable
+```{r, warning=FALSE}
+summary(data2$song_popularity)
+hist(data2$song_popularity)
+```
+
+
+# Create train and test subset
+```{r, warning=FALSE}
+set.seed(123)
+splitSample <- sample(1:3, size=nrow(data2), prob=c(0.4,0.15,0.45), replace = TRUE)
+train <- data2[splitSample==1,]
+test <- data2[splitSample==2,]
+intersect(train$spotify_id,test$spotify_id)
+```
+
+
+######### GLM Model #################################
+# Remove original data
+```{r, warning=FALSE}
+rm(list = c("data","data1","data2","data2_c"))
+```
+
+
+# Exploring numeric variable
+```{r, warning=FALSE}
+train.glm <- train[,-which(sapply(train,is.numeric)=="FALSE")]
+test.glm <- test[,-which(sapply(test,is.numeric)=="FALSE")]
+d <- cor(train.glm)
+library(corrplot)
+corrplot::corrplot(d,method = "circle",type="upper")
+```
+
+
+# Build model using train data
+```{r, warning=FALSE}
+model1 <- glm(song_popularity~ acousticness+energy+instrumentalness+loudness+speechiness+time_signature,
+              family=gaussian(link = "identity"), data = train.glm)
+summary(model1)
+model2 <- step(glm(song_popularity~.,family=gaussian(link = "identity"),data = train.glm),trace = F)
+summary(model2)
+par(mfrow=c(2,2))
+plot(model2)
+```
+
+
+# Calculate the predict value using test subset
+```{r, warning=FALSE}
+fit1 <- predict(model1,test.glm)
+fit2 <- predict(model2,test.glm)
+summary(fit1)
+summary(fit2)
+```
+
+
+# Evaluate the model
+```{r, warning=FALSE}
+fit1.value <- caret::postResample(pred = fit1,obs = test.glm$song_popularity)
+fit2.value <- caret::postResample(pred = fit2,obs = test.glm$song_popularity)
+fit1.value
+fit2.value
+```
+
+
+
+############# Logistic Model##############
+
+# Exploring relationships among features
+```{r , warning=FALSE}
+train.glm$highly_popular <- ifelse(train.glm$song_popularity>=80,1,0)
+test.glm$highly_popular <- ifelse(test.glm$song_popularity>=80,1,0)
+table(train.glm$highly_popular)
+table(test.glm$highly_popular)
+train.glm <- train.glm[,-2]
+test.glm <- test.glm[,-2]
+train.glm$highly_popular <- as.factor(train.glm$highly_popular)
+test.glm$highly_popular <- as.factor(test.glm$highly_popular)
+```
+
+
+# Use the glm() function to fit a logistic regression model
+```{r, warning=FALSE}
+model3 <- glm(highly_popular ~index + album_release_year + 
+                album_release_month + acousticness + danceability + energy + 
+                instrumentalness + key + liveness + loudness + mode + speechiness + 
+                time_signature + total_available_markets + valence,data = train.glm,family = binomial(link = "logit"))
+summary(model3)
+model4 <- glm(highly_popular ~ acousticness+danceability+energy+instrumentalness+loudness+speechiness+total_available_markets,data = train.glm,family = binomial(link = "logit"))
+summary(model4) 
+coef(model3)
+exp(coef(model3))
+```
+
+
+# Create a confusion matrix and report the results of your model for the test set.
+```{r, warning=FALSE}
+library(caret)
+predict.test <- ifelse(predict(model3,newdata = test.glm,type = "response")>=0.5,"1","0")
+predict.test <- as.factor(predict.test)
+confusionMatrix(predict.test,test.glm$highly_popular)
+```
+
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
