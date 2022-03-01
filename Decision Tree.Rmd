@@ -1,0 +1,146 @@
+---
+title: "Tree Based Methods"
+author: "Yameng Guo"
+date: "10/18/2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+# Load data and check the structure 
+```{r, warning=FALSE}
+library(readr)
+library(dplyr)
+library(psych)
+data <- read.csv("Spotify_Tracks_March2021.csv",header = T)
+data1 <- data
+dim(data1)
+str(data1)
+```
+
+# Handling "spotify_id" duplicate observations
+```{r, warning=FALSE}
+dupes <- duplicated(data1$spotify_id)
+table(dupes)
+a <- which(dupes=="TRUE")
+data2 <- data1[-a,]
+```
+
+# Check missing value 
+```{r, warning=FALSE}
+data2 <- na.omit(data2)
+```
+
+# Create an indicator response variable "Popularity_Level"
+```{r, warning=FALSE}
+data2$Popularity_Level <- ifelse(data2$song_popularity>=80,"High_Popularity",
+                                 ifelse(data2$song_popularity>=60,"Moderately_High_Popularity",
+                                        ifelse(data2$song_popularity>=40,"Moderately_Low_Popularity",
+                                               ifelse(data2$song_popularity>=20,"Low_Popularity","No_Popularity"))))
+data2$Popularity_Level <- as.factor(data2$Popularity_Level)
+```
+
+# Relabel Popularity_Level variable, using 1,2,..,5 represents "No_Popularity",..
+```{r, warning=FALSE}
+data2$Popularity_Level <- recode_factor(data2$Popularity_Level,"No_Popularity"=1,"Low_Popularity"=2,
+                                "Moderately_Low_Popularity"=3,
+                                "Moderately_High_Popularity"=4,
+                                "High_Popularity"=5)
+table(data2$Popularity_Level)
+prop.table(table(data2$Popularity_Level))
+```
+
+# Remove index, song popularity and release date variables
+```{r, warning=FALSE}
+data2 <- data2[,-c(1,5,6)]
+```
+
+# Create a training and test that have about 40% and 15% of randomly selected observations from the original dataset
+```{r, warning=FALSE}
+set.seed(10152021)
+splitSample <- sample(1:3, size=nrow(data2), prob=c(0.4,0.15,0.45), replace = TRUE)
+train <- data2[splitSample==1,]
+test <- data2[splitSample==2,]
+```
+
+# Remove original data
+```{r, warning=FALSE}
+rm(list = c("data","data1","data2"))
+```
+
+
+# ###################### Training Decision Tree using C50 library #######################
+# Creating Decision Tree Model using Training set
+```{r, warning=FALSE}
+library(C50)
+DTree1 <-C5.0(x= subset(train, select=-c(spotify_id, song_name,
+                                         artist_name,song_explicit,
+                                         Popularity_Level)), y=train$Popularity_Level)
+DTree1
+summary(DTree1)
+```
+
+# Evaluating the fitted Decision Tree Model
+```{r, warning=FALSE}
+library(caret)
+DTree1_p <- predict.C5.0(DTree1, newdata= subset(test, select=-c(spotify_id, 
+                                          song_name,artist_name,song_explicit,
+                                          Popularity_Level)), type="class")
+xtabs(~test$Popularity_Level+DTree1_p)
+
+confusionMatrix(data=DTree1_p, reference=test$Popularity_Level)
+```
+
+# Improving the model by pruning: Fitting the model and then evaluating in this code chunk
+```{r, warning=FALSE}
+DTree1mod <-C5.0(x= subset(train, select=-c(spotify_id, song_name,artist_name,
+                                            song_explicit,Popularity_Level)),
+                 y=train$Popularity_Level, trials=10,noGlobalPruning=FALSE)
+DTree1mod
+summary(DTree1mod)
+```
+
+# getting full information on fitted model including decision rules and accuracy matrix
+```{r, warning=FALSE}
+DTree1mod_p <- predict.C5.0(DTree1mod, newdata= subset(test, select=-c(spotify_id, 
+                                                                       song_name,artist_name,song_explicit,
+                                                                       Popularity_Level)), type="class")
+xtabs(~test$Popularity_Level+DTree1mod_p)
+
+confusionMatrix(data=DTree1mod_p, reference=test$Popularity_Level)
+```
+
+# ###################### XGBoost model: Build the model on Training set #######################
+# xgboost takes data matrix as input
+# Defining the data matrix for Training and Test subsets with predictors columns and response label columns.
+```{r, warning=FALSE}
+library(xgboost)
+xgb_train  <- xgb.DMatrix(data.matrix( subset(train, select=-c(spotify_id, 
+                                                               song_name,artist_name,song_explicit,
+                                                               Popularity_Level)) ), label = as.numeric(train$Popularity_Level)-1)
+
+xgb_test  <- xgb.DMatrix(data.matrix( subset(test, select=-c(spotify_id,                                                                    song_name,artist_name,song_explicit,
+                                       Popularity_Level)) ), label = as.numeric(test$Popularity_Level)-1)
+
+```
+
+# Build the tree
+```{r, warning=FALSE}
+myparams <- list(eta = 0.2, max_depth = 20, objective = "multi:softmax",  eval_metric = "merror", num_class=5)
+xgb_model1 <- xgboost(params=myparams, data=xgb_train, nrounds=20)
+```
+
+# XGBoost model: Evaluate the fitted xgboost model on Test set
+```{r, warning=FALSE}
+gb_pred1 <- predict(xgb_model1, xgb_test, type="response")
+summary(gb_pred1)
+structure(xgb_test)
+confusionMatrix(as.factor(gb_pred1+1), as.factor(getinfo(xgb_test, 'label')+1))
+```
+
+
+
